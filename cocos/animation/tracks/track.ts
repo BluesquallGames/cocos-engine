@@ -25,14 +25,14 @@
 import { ccclass, serializable, uniquelyReferenced } from 'cc.decorator';
 import { SUPPORT_JIT } from 'internal:constants';
 import type { Component } from '../../scene-graph/component';
-import { error, ObjectCurve, QuatCurve, RealCurve, errorID, warnID, js } from '../../core';
+import { error, ObjectCurve, QuatCurve, RealCurve, errorID, warnID, js, warn } from '../../core';
 import { assertIsTrue } from '../../core/data/utils/asserts';
 
 import { Node } from '../../scene-graph';
 import { CLASS_NAME_PREFIX_ANIM, createEvalSymbol } from '../define';
 import type { AnimationMask } from '../marionette/animation-mask';
 import { PoseOutput } from '../pose-output';
-import { ComponentPath, HierarchyPath, isPropertyPath, TargetPath } from '../target-path';
+import { ComponentPath, HierarchyPath, ICustomTargetPath, isPropertyPath, TargetPath } from '../target-path';
 import { IValueProxyFactory } from '../value-proxy';
 import { Range } from './utils';
 
@@ -50,7 +50,13 @@ export interface RuntimeBinding<T = unknown> {
 
 export type Binder = (binding: TrackBinding) => undefined | RuntimeBinding;
 
-export type TrsTrackPath = [HierarchyPath, 'position' | 'rotation' | 'scale' | 'eulerAngles'];
+@ccclass('cc.animation.RootMotionPath')
+class RootMotionPath implements ICustomTargetPath {
+    public get (target: Node): unknown {
+        warn('RootMotionPath is not supported yet.');
+        return null;
+    }
+}
 
 /**
  * @en Describes how to find the animation target.
@@ -108,6 +114,16 @@ class TrackPath {
     public toComponent<T extends Component> (constructor: Constructor<T> | string): TrackPath {
         const path = new ComponentPath(typeof constructor === 'string' ? constructor : js.getClassName(constructor));
         this._paths.push(path);
+        return this;
+    }
+
+    /**
+     * @en Appends a root motion path.
+     * @zh 附加一段根运动路径。
+     * @returns `this`
+     */
+    public toRootMotion (): TrackPath {
+        this._paths.push(new RootMotionPath());
         return this;
     }
 
@@ -214,6 +230,16 @@ class TrackPath {
     }
 
     /**
+     * @zh 判断指定路径段是否是根运动路径。
+     * @en Decides if the specific path segment is a root motion path.
+     * @param index Index to the segment。
+     * @returns The judgement result.
+     */
+    public isRootMotionAt (index: number): boolean {
+        return this._paths[index] instanceof RootMotionPath;
+    }
+
+    /**
      * @en Slices a interval of the path.
      * @zh 分割指定区段上的路径。
      * @param beginIndex Begin index to the segment. Default to 0.
@@ -238,7 +264,7 @@ class TrackPath {
     /**
      * @internal
      */
-    public [parseTrsPathTag] (): { node: string; property: "position" | "scale" | "rotation" | "eulerAngles"; } | null {
+    public [parseTrsPathTag] (): { node: string; property: 'position' | 'scale' | 'rotation' | 'eulerAngles'; } | null {
         const { _paths: paths } = this;
         const nPaths = paths.length;
 
@@ -331,7 +357,7 @@ export class TrackBinding {
 
     private static _animationFunctions = new WeakMap<Constructor, Map<string | number, AnimationFunction>>();
 
-    public parseTrsPath (): { node: string; property: "position" | "scale" | "rotation" | "eulerAngles"; } | null {
+    public parseTrsPath (): { node: string; property: 'position' | 'scale' | 'rotation' | 'eulerAngles'; } | null {
         if (this.proxy) {
             return null;
         } else {
